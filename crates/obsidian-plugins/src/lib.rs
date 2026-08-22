@@ -13,7 +13,9 @@ impl PluginManager {
     }
 
     pub fn with_dir(plugins_dir: &Path) -> Self {
-        let engine = Engine::new();
+        let mut engine = Engine::new();
+        engine.set_max_operations(10_000);
+        engine.set_max_call_levels(16);
         let mut asts = Vec::new();
 
         if !plugins_dir.exists() {
@@ -57,6 +59,7 @@ impl PluginManager {
                         continue;
                     } else {
                         eprintln!("Error executing on_player_join: {}", err);
+                        return false; // Fail-closed on error to prevent bypass
                     }
                 }
             }

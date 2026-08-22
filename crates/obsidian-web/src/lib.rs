@@ -25,9 +25,9 @@ pub async fn run_web_server(port: u16, stats: Arc<ProxyStats>) -> Result<(), std
     let state = AppState { db, stats };
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin("http://localhost:3000".parse::<axum::http::HeaderValue>().unwrap())
+        .allow_methods(tower_http::cors::Any)
+        .allow_headers(tower_http::cors::Any);
 
     let api_routes = Router::new()
         .route("/servers", get(api::list_servers).post(api::add_server))

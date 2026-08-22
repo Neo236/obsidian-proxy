@@ -291,9 +291,8 @@ impl ConnectionRouter {
         let shared_secret = decrypt_rsa(&self.rsa_key, &enc_resp.shared_secret)?;
         
         let client_token = if let Some(_) = enc_resp.salt {
-            // 1.19+ profile public key signature handling is skipped for proxy.
-            // If salt is present, proxy assumes profile keys are disabled.
-            verify_token.to_vec() 
+            // 1.19+ profile public key signature handling is unsupported.
+            return Err(RouterError::Io(std::io::Error::new(std::io::ErrorKind::Unsupported, "Profile keys not supported")));
         } else {
             decrypt_rsa(&self.rsa_key, &enc_resp.verify_token)?
         };

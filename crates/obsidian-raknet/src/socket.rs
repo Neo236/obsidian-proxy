@@ -10,7 +10,7 @@ use crate::offline::*;
 
 pub struct RakNetListener {
     socket: Arc<UdpSocket>,
-    sessions: DashMap<SocketAddr, mpsc::Sender<Bytes>>,
+    sessions: Arc<DashMap<SocketAddr, mpsc::Sender<Bytes>>>,
     server_guid: u64,
     motd: String,
     new_connections_tx: mpsc::Sender<(SocketAddr, mpsc::Sender<Bytes>, mpsc::Receiver<Bytes>)>,
@@ -24,7 +24,7 @@ impl RakNetListener {
         let (tx, rx) = mpsc::channel(100);
         Ok(Self {
             socket: Arc::new(socket),
-            sessions: DashMap::new(),
+            sessions: Arc::new(DashMap::new()),
             server_guid,
             motd,
             new_connections_tx: tx,
@@ -90,10 +90,13 @@ impl RakNetListener {
                                     self.sessions.insert(addr, tx_to_router);
                                     
                                     let socket_clone = Arc::clone(&self.socket);
+                                    let sessions_clone = Arc::clone(&self.sessions);
                                     tokio::spawn(async move {
                                         while let Some(data) = rx_from_router.recv().await {
                                             let _ = socket_clone.send_to(&data, addr).await;
                                         }
+                                        // Cleanup session when connection terminates
+                                        sessions_clone.remove(&addr);
                                     });
                                     
                                     let _ = self.new_connections_tx.send((addr, tx_to_client, rx_from_client)).await;

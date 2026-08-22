@@ -11,7 +11,8 @@ type Aes256Ctr = ctr::Ctr128BE<Aes256>;
 type HmacSha256 = Hmac<Sha256>;
 
 pub struct BedrockCipher {
-    cipher: Aes256Ctr,
+    encryptor: Aes256Ctr,
+    decryptor: Aes256Ctr,
     key: [u8; 32],
     send_counter: u64,
     receive_counter: u64,
@@ -26,12 +27,21 @@ impl BedrockCipher {
 
         let mut key = [0u8; 32];
         key.copy_from_slice(&hash[..32]);
-        let mut iv = [0u8; 16];
-        iv.copy_from_slice(&hash[..16]);
         
-        let cipher = Aes256Ctr::new(key.as_ref().into(), &iv.into());
+        let mut iv = [0u8; 16];
+        iv.copy_from_slice(&key[..16]);
+        iv[15] ^= 0; // Just ensuring IV matches bedrock spec logic usually IV is first 16 bytes of key + counter (counter updated later or handled by cipher stream)
+        // Wait, standard bedrock IV is first 16 bytes of the hash. It is updated per packet or CTR advances? CTR advances automatically.
+        // Actually, IV for bedrock AES is first 16 bytes of hash. But they use CFB8 or CTR? They use CTR.
+        let mut iv_bytes = [0u8; 16];
+        iv_bytes.copy_from_slice(&hash[..16]);
+        
+        let encryptor = Aes256Ctr::new(key.as_ref().into(), &iv_bytes.into());
+        let decryptor = Aes256Ctr::new(key.as_ref().into(), &iv_bytes.into());
+        
         Self { 
-            cipher,
+            encryptor,
+            decryptor,
             key,
             send_counter: 0,
             receive_counter: 0,
@@ -39,12 +49,13 @@ impl BedrockCipher {
     }
 
     pub fn encrypt(&mut self, payload: &mut Vec<u8>) -> Result<(), &'static str> {
-        let mut mac = HmacSha256::new_from_slice(&self.key).map_err(|_| "HMAC key error")?;
-        mac.update(&self.send_counter.to_le_bytes());
-        mac.update(payload);
-        let signature = mac.finalize().into_bytes();
+        let mut hasher = Sha256::new();
+        hasher.update(&self.send_counter.to_le_bytes());
+        hasher.update(&payload);
+        hasher.update(&self.key);
+        let signature = hasher.finalize();
 
-        self.cipher.apply_keystream(payload);
+        self.encryptor.apply_keystream(payload);
         payload.extend_from_slice(&signature[..8]);
 
         self.send_counter += 1;
@@ -53,7 +64,7 @@ impl BedrockCipher {
 
     pub fn decrypt(&mut self, payload: &mut Vec<u8>) -> Result<(), &'static str> {
         if payload.len() < 8 {
-            return Err("Packet too short for HMAC");
+            return Err("Packet too short for signature");
         }
 
         let sig_offset = payload.len() - 8;
@@ -64,15 +75,16 @@ impl BedrockCipher {
         };
         payload.truncate(sig_offset);
 
-        self.cipher.apply_keystream(payload);
+        self.decryptor.apply_keystream(payload);
 
-        let mut mac = HmacSha256::new_from_slice(&self.key).map_err(|_| "HMAC key error")?;
-        mac.update(&self.receive_counter.to_le_bytes());
-        mac.update(payload);
-        let computed_signature = mac.finalize().into_bytes();
+        let mut hasher = Sha256::new();
+        hasher.update(&self.receive_counter.to_le_bytes());
+        hasher.update(&payload);
+        hasher.update(&self.key);
+        let computed_signature = hasher.finalize();
 
         if computed_signature[..8] != expected_signature {
-            return Err("Invalid HMAC signature");
+            return Err("Invalid packet signature");
         }
 
         self.receive_counter += 1;

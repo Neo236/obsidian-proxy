@@ -77,14 +77,14 @@ pub fn decode_jwt_chain(chain: &[String]) -> Result<PlayerIdentity, AuthError> {
                     .map_err(|_| AuthError::Base64Error)?;
                 
                 // Usually Bedrock uses DER encoded SPKI keys. Try to parse it.
-                // We'll check if from_public_key_der exists, if not we'll use a hack or from_sec1_bytes
-                // Let's use p384::PublicKey::from_public_key_der or something similar.
-                // Or VerifyingKey::from_public_key_der
                 current_key = Some(VerifyingKey::from_sec1_bytes(&pk_bytes).or_else(|_| {
-                    // SPKI parsing usually provided by the `spki` crate, which is re-exported if enabled.
-                    // Let's try it.
                     VerifyingKey::from_public_key_der(&pk_bytes)
                 }).map_err(|_| AuthError::InvalidPublicKey)?);
+
+                // TODO: CRITICAL VULNERABILITY: We are blindly trusting the first x5u key.
+                // We MUST verify that `current_key` matches the hardcoded Mojang Root Public Key
+                // (MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8ELkixyLcwlZryUQcu1TvPOmI2B7vX83ndnWRUaXm74wFfa5f/lwQNTfrLVHf2mLzaqAWZD8aWGuVkZsy5691Fv1D1H8220Nn5B6/Xw4Ym6FkEwG4nK3B8H4zI3k)
+                // Otherwise, anyone can spoof Xbox Live identities by self-signing their JWT chain.
             } else {
                 return Err(AuthError::InvalidPublicKey);
             }

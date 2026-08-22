@@ -14,8 +14,8 @@ Aprovechando el poder de Rust y el ecosistema asíncrono de Tokio, Obsidian es c
 ### Características Principales
 
 *   ⚡ **Rendimiento Cero-Costo:** Arquitectura asíncrona no bloqueante (Lock-Free) apoyada en primitivas atómicas de Rust.
-*   🎮 **Soporte Bidireccional (Java & Bedrock):** Implementación de cero del protocolo `RakNet` (UDP) para túneles Bedrock, junto al protocolo estándar TCP de Java Edition.
-*   🛡️ **Modern Forwarding & Seguridad:** Autenticación criptográfica AES-128-CFB8 para Java, soporte nativo de HMAC para Velocity Modern Forwarding, e intercambio seguro ECDH P-384 + JWT para Bedrock.
+*   🚧 **Soporte Bidireccional (Java & Bedrock):** Implementación sólida para Java Edition. (NOTA: El proxy L7 de Bedrock / RakNet se encuentra actualmente en fase *Work-In-Progress* y su stack de confiabilidad no está totalmente conectado).
+*   🛡️ **Modern Forwarding & Seguridad:** Autenticación criptográfica AES-128-CFB8 para Java.
 *   🧩 **Compatibilidad Transparente con Mods:** Parseo y enrutamiento inteligente del sufijo oculto `\0FML\0`. ¡Total compatibilidad con Forge, NeoForge y Fabric sin corromper conexiones BungeeCord!
 *   📜 **Motor de Plugins Dinámico:** Un intérprete nativo integrado (`Rhai`) permite escribir scripts al vuelo (ej. firewalls, filtros anti-bots) dentro de la carpeta `/plugins`, interceptando conexiones al instante sin necesidad de recompilar Rust.
 *   📊 **Telemetría y WebUI Integrada:** Base de datos embebida (SQLite WAL protegido vía `spawn_blocking`) y un panel de administración Single Page Application (Svelte) para monitorear el ancho de banda del servidor en tiempo real.

@@ -21,7 +21,7 @@ impl FragmentAssembler {
         let split_count = split_info.split_count;
         let split_index = split_info.split_index;
 
-        if split_count <= 0 || split_index < 0 || split_index >= split_count {
+        if split_count <= 0 || split_count > 4096 || split_index < 0 || split_index >= split_count {
             return None;
         }
 

@@ -1,0 +1,9 @@
+/target/
+/obsidian-webui/node_modules/
+/obsidian-webui/dist/
+.env
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+plugins/*.rhai
