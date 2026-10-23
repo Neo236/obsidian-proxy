@@ -1,5 +1,5 @@
+use crate::codec::{DecodeError, read_varint};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use crate::codec::{read_varint, DecodeError};
 
 #[derive(Debug, Clone)]
 pub struct RequestNetworkSettings {

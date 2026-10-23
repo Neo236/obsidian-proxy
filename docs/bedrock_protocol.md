@@ -6,8 +6,8 @@ El protocolo de Minecraft Bedrock Edition viaja como contenido útil (payload) d
 La recepción principal y extracción de los datos Bedrock sucede en `batch.rs`. Un "Batch Packet" se identifica estrictamente porque comienza con el header byte `0xFE`.
 Bedrock admite varios modos de compresión gestionados mediante el enum `CompressionMode`:
 *   **None**: Se utiliza el bloque de `Bytes` sin alteraciones.
-*   **Zlib**: Se usa `libdeflater` para mayor velocidad. Para mitigar vectores de ataque por agotamiento de memoria (Ej. Zip Bombs), la descompresión Zlib no aloja memoria dinámicamente según lo que indique el paquete, sino que asigna un búfer finito estricto (máximo de 10 MB: `vec![0; 1024 * 1024 * 10]`) limitando y truncando silenciosamente mediante `out.truncate(len)`.
-*   **Snappy**: Se emplea el crate `snap`, utilizando `SnapDecoder::decompress_vec`.
+*   **Zlib**: Se usa `flate2::read::ZlibDecoder` con un límite estricto de lectura (`Read::take(MAX_BATCH_DECOMPRESSED_LEN + 1)`, donde `MAX_BATCH_DECOMPRESSED_LEN = 4 MiB`) para rechazar bombas de compresión devolviendo `BatchError::DecompressedBatchTooLarge` en lugar de truncar silenciosamente paquetes válidos.
+*   **Snappy**: Se emplea el crate `snap` validando la longitud descomprimida esperada (`decompress_len <= MAX_BATCH_DECOMPRESSED_LEN`) antes de reservar memoria.
 
 ## 2. Decodificación de VarInts
 Tras la descompresión de un batch, el payload contiene múltiples paquetes Bedrock concatenados, cada uno precedido por su longitud codificada como un número entero de longitud variable (*VarInt*).

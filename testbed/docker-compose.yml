@@ -1,0 +1,99 @@
+# Banco de pruebas de Obsidian. Nada de esto toca minetuki (25565).
+#
+# Todos los backends corren con online-mode=false porque el proxy ya autenticó
+# contra Mojang y el cliente solo puede hacerlo una vez. Eso vale para cualquier
+# proxy de Minecraft, y es la razón por la que estos puertos solo deberían ser
+# alcanzables desde la LAN de pruebas.
+#
+# Ninguno arranca solo: se levantan a mano para poder probar el camino de
+# "backend apagado".
+
+services:
+  # 1.21.1 NeoForge sin mods. Protocolo 767: tiene Configuration y Transfer.
+  # Sirve para ejercitar el marcador FML que tocamos al arreglar la inyección.
+  neoforge1211:
+    image: itzg/minecraft-server
+    container_name: obs-test-1211-neoforge
+    restart: "no"
+    ports: ["127.0.0.1:25571:25565"]
+    mem_limit: 2g
+    environment:
+      EULA: "TRUE"
+      TYPE: "NEOFORGE"
+      VERSION: "1.21.1"
+      NEOFORGE_VERSION: "21.1.248"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "1G"
+      MOTD: "obsidian test - neoforge 1.21.1"
+      LEVEL_TYPE: "minecraft:flat"
+      VIEW_DISTANCE: "4"
+      SIMULATION_DISTANCE: "4"
+      SPAWN_PROTECTION: "0"
+      MAX_PLAYERS: "5"
+      SYNC_CHUNK_WRITES: "false"
+      TZ: "America/Argentina/Buenos_Aires"
+    volumes: ["./data/neoforge1211:/data"]
+
+  # 1.21 vanilla. Mismo protocolo 767: el control sin mods.
+  vanilla121:
+    image: itzg/minecraft-server
+    container_name: obs-test-121-vanilla
+    restart: "no"
+    ports: ["127.0.0.1:25572:25565"]
+    mem_limit: 2g
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "1.21"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "1G"
+      MOTD: "obsidian test - vanilla 1.21"
+      LEVEL_TYPE: "minecraft:flat"
+      VIEW_DISTANCE: "4"
+      SIMULATION_DISTANCE: "4"
+      SPAWN_PROTECTION: "0"
+      MAX_PLAYERS: "5"
+      SYNC_CHUNK_WRITES: "false"
+      TZ: "America/Argentina/Buenos_Aires"
+    volumes: ["./data/vanilla121:/data"]
+
+  # 1.20.4 vanilla. Protocolo 765: tiene Configuration pero NO Transfer.
+  # Es el caso donde retener sale gratis y el limbo cuesta expulsión.
+  vanilla1204:
+    image: itzg/minecraft-server
+    container_name: obs-test-1204-vanilla
+    restart: "no"
+    ports: ["127.0.0.1:25573:25565"]
+    mem_limit: 2g
+    environment:
+      EULA: "TRUE"
+      TYPE: "VANILLA"
+      VERSION: "1.20.4"
+      ONLINE_MODE: "FALSE"
+      MEMORY: "1G"
+      MOTD: "obsidian test - vanilla 1.20.4"
+      LEVEL_TYPE: "minecraft:flat"
+      VIEW_DISTANCE: "4"
+      SIMULATION_DISTANCE: "4"
+      SPAWN_PROTECTION: "0"
+      MAX_PLAYERS: "5"
+      SYNC_CHUNK_WRITES: "false"
+      TZ: "America/Argentina/Buenos_Aires"
+    volumes: ["./data/vanilla1204:/data"]
+
+  # El proxy. Corre en un contenedor para que Docker publique el puerto y no
+  # haga falta tocar ufw. El binario se monta desde el build del host.
+  proxy:
+    image: debian:trixie-slim
+    container_name: obsidian-proxy
+    restart: "no"
+    ports: ["127.0.0.1:25570:25570"]
+    mem_limit: 512m
+    volumes:
+      - ../target/release/obsidian:/usr/local/bin/obsidian:ro
+      - ./proxy:/work
+    working_dir: /work
+    environment:
+      RUST_LOG: "obsidian_core=debug,info"
+      TZ: "America/Argentina/Buenos_Aires"
+    command: ["/usr/local/bin/obsidian", "--config", "/work/obsidian.toml"]

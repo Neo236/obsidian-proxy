@@ -229,7 +229,10 @@ pub struct ServerStatus {
     pub favicon: Option<String>,
     #[serde(rename = "enforcesSecureChat", skip_serializing_if = "Option::is_none")]
     pub enforces_secure_chat: Option<bool>,
-    #[serde(rename = "preventsChatReports", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "preventsChatReports",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub prevents_chat_reports: Option<bool>,
 }
 

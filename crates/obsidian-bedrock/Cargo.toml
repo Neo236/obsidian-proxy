@@ -1,24 +1,31 @@
 [package]
 name = "obsidian-bedrock"
-version = "0.1.0"
-edition = "2024"
+description = "Bedrock Edition batching, compression, ECDH key exchange and Xbox Live login chain."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-bytes = "1"
-tokio = { version = "1", features = ["full"] }
-snap = "1"
-libdeflater = "1.19"
-thiserror = "2"
-obsidian-raknet = { path = "../obsidian-raknet" }
-p384 = "0.13"
-aes = "0.8"
-ctr = "0.9"
-sha2 = "0.10"
-hmac = "0.12"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-base64 = "0.22"
-rand_core = { version = "0.6", features = ["std"] }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+base64 = { workspace = true }
 
-[dev-dependencies]
-rand = "0.10.2"
+# batching & compression
+snap = { workspace = true }
+libdeflater = { workspace = true }
+
+# ecdh & packet crypto
+p384 = { workspace = true }
+aes = { workspace = true }
+ctr = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+rand_core = { workspace = true }

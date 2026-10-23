@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
 use base64::Engine as _;
-use thiserror::Error;
-use p384::ecdsa::{VerifyingKey, Signature, signature::Verifier};
+use p384::ecdsa::{Signature, VerifyingKey, signature::Verifier};
 use p384::pkcs8::DecodePublicKey;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AuthError {
@@ -66,8 +66,9 @@ pub fn decode_jwt_chain(chain: &[String]) -> Result<PlayerIdentity, AuthError> {
         let header_bytes = base64::engine::general_purpose::STANDARD
             .decode(&header_b64)
             .map_err(|_| AuthError::Base64Error)?;
-        
-        let header: JwtHeader = serde_json::from_slice(&header_bytes).map_err(|_| AuthError::JsonError)?;
+
+        let header: JwtHeader =
+            serde_json::from_slice(&header_bytes).map_err(|_| AuthError::JsonError)?;
 
         // If we don't have a current key (first token), use x5u from header
         if current_key.is_none() {
@@ -75,16 +76,20 @@ pub fn decode_jwt_chain(chain: &[String]) -> Result<PlayerIdentity, AuthError> {
                 let pk_bytes = base64::engine::general_purpose::STANDARD
                     .decode(x5u)
                     .map_err(|_| AuthError::Base64Error)?;
-                
+
                 // Usually Bedrock uses DER encoded SPKI keys. Try to parse it.
                 // We'll check if from_public_key_der exists, if not we'll use a hack or from_sec1_bytes
                 // Let's use p384::PublicKey::from_public_key_der or something similar.
                 // Or VerifyingKey::from_public_key_der
-                current_key = Some(VerifyingKey::from_sec1_bytes(&pk_bytes).or_else(|_| {
-                    // SPKI parsing usually provided by the `spki` crate, which is re-exported if enabled.
-                    // Let's try it.
-                    VerifyingKey::from_public_key_der(&pk_bytes)
-                }).map_err(|_| AuthError::InvalidPublicKey)?);
+                current_key = Some(
+                    VerifyingKey::from_sec1_bytes(&pk_bytes)
+                        .or_else(|_| {
+                            // SPKI parsing usually provided by the `spki` crate, which is re-exported if enabled.
+                            // Let's try it.
+                            VerifyingKey::from_public_key_der(&pk_bytes)
+                        })
+                        .map_err(|_| AuthError::InvalidPublicKey)?,
+                );
             } else {
                 return Err(AuthError::InvalidPublicKey);
             }
@@ -101,21 +106,25 @@ pub fn decode_jwt_chain(chain: &[String]) -> Result<PlayerIdentity, AuthError> {
             .map_err(|_| AuthError::InvalidSignature)?;
 
         let message = format!("{}.{}", parts[0], parts[1]);
-        key.verify(message.as_bytes(), &signature).map_err(|_| AuthError::InvalidSignature)?;
+        key.verify(message.as_bytes(), &signature)
+            .map_err(|_| AuthError::InvalidSignature)?;
 
         let payload_bytes = base64::engine::general_purpose::STANDARD
             .decode(&payload_b64)
             .map_err(|_| AuthError::Base64Error)?;
 
-        let payload: JwtPayload = serde_json::from_slice(&payload_bytes).map_err(|_| AuthError::JsonError)?;
+        let payload: JwtPayload =
+            serde_json::from_slice(&payload_bytes).map_err(|_| AuthError::JsonError)?;
 
         if let Some(next_pub) = payload.identity_public_key {
             let pk_bytes = base64::engine::general_purpose::STANDARD
                 .decode(&next_pub)
                 .map_err(|_| AuthError::Base64Error)?;
-            current_key = Some(VerifyingKey::from_sec1_bytes(&pk_bytes).or_else(|_| {
-                VerifyingKey::from_public_key_der(&pk_bytes)
-            }).map_err(|_| AuthError::InvalidPublicKey)?);
+            current_key = Some(
+                VerifyingKey::from_sec1_bytes(&pk_bytes)
+                    .or_else(|_| VerifyingKey::from_public_key_der(&pk_bytes))
+                    .map_err(|_| AuthError::InvalidPublicKey)?,
+            );
         }
 
         if let Some(extra) = payload.extra_data {
@@ -126,7 +135,7 @@ pub fn decode_jwt_chain(chain: &[String]) -> Result<PlayerIdentity, AuthError> {
             });
         }
     }
-    
+
     identity.ok_or(AuthError::MissingExtraData)
 }
 
@@ -165,7 +174,7 @@ mod tests {
         let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.to_bytes());
 
         let token = format!("{}.{}", message, sig_b64);
-        
+
         let result = decode_jwt_chain(&[token]).unwrap();
         assert_eq!(result.uuid, "test-uuid");
         assert_eq!(result.username, "Steve");

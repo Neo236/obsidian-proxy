@@ -273,7 +273,7 @@ mod tests {
                 "varint_size mismatch for {val}"
             );
 
-            let mut slice = &expected_bytes[..];
+            let mut slice = expected_bytes;
             let decoded = slice.get_var_int().expect("Failed to decode VarInt");
             assert_eq!(decoded, val, "VarInt decode mismatch for {val}");
             assert_eq!(slice.remaining(), 0);
@@ -296,7 +296,10 @@ mod tests {
             (128, &[0x80, 0x01]),
             (255, &[0xff, 0x01]),
             (2147483647, &[0xff, 0xff, 0xff, 0xff, 0x07]),
-            (-1, &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]),
+            (
+                -1,
+                &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01],
+            ),
             (
                 9223372036854775807,
                 &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f],
@@ -321,7 +324,7 @@ mod tests {
                 "varlong_size mismatch for {val}"
             );
 
-            let mut slice = &expected_bytes[..];
+            let mut slice = expected_bytes;
             let decoded = slice.get_var_long().expect("Failed to decode VarLong");
             assert_eq!(decoded, val, "VarLong decode mismatch for {val}");
             assert_eq!(slice.remaining(), 0);

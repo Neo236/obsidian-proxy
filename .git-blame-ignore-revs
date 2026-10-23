@@ -1,0 +1,8 @@
+# Revisions to skip in `git blame` output — bulk reformats with no logic change.
+#
+# Enable locally once:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# Add the SHA of the "style: apply rustfmt across the workspace" commit below
+# after it lands, one full 40-character SHA per line.
+c173066d6092fea569b0687226d1bc3b047a02d6

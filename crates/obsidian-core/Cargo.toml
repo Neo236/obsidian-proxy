@@ -1,22 +1,33 @@
 [package]
 name = "obsidian-core"
-version = "0.1.0"
-edition = "2024"
+description = "Connection routing, login orchestration and backend lifecycle for the Obsidian proxy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 tokio = { workspace = true }
 bytes = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
-serde_json = "1.0"
-rand = "0.8"
-rsa = "0.9"
-obsidian-protocol = { path = "../obsidian-protocol" }
-obsidian-raknet = { path = "../obsidian-raknet" }
-obsidian-bedrock = { path = "../obsidian-bedrock" }
-obsidian-plugins = { path = "../obsidian-plugins" }
+serde_json = { workspace = true }
+toml_edit = { workspace = true }
+rusqlite = { workspace = true }
+arc-swap = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+rsa = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "io-util", "net"] }
+obsidian-protocol = { workspace = true }
+obsidian-raknet = { workspace = true }
+obsidian-plugins = { workspace = true }
+# obsidian-bedrock is intentionally absent: nothing in this crate references it
+# yet. It gets added back in the Bedrock phase, when the batching and login
+# layers are actually wired into the RakNet path.

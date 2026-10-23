@@ -1,15 +1,22 @@
 [package]
 name = "obsidian-raknet"
-version = "0.1.0"
-edition = "2024"
+description = "RakNet offline handshake, datagram framing and reliability layer for Bedrock Edition."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [features]
 mcpe = []
 
 [dependencies]
-tokio = { version = "1", features = ["net", "rt", "time", "sync", "macros"] }
-bytes = "1"
-dashmap = "6"
-tracing = "0.1"
-thiserror = "2"
-rand = "0.8"
+tokio = { workspace = true }
+bytes = { workspace = true }
+dashmap = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }

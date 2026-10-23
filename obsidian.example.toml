@@ -1,0 +1,112 @@
+# Obsidian Proxy — configuración de ejemplo.
+#
+# Copiala a obsidian.toml y ajustala. Toda sección es opcional: lo que no
+# declares toma el valor por defecto documentado abajo.
+#
+# El proxy arranca sin este archivo, con un único backend en 127.0.0.1:25566.
+
+[proxy]
+bind = "127.0.0.1:25565"        # escucha de Java Edition (cambiá a IP de Tailscale/WireGuard para exponer)
+raknet_bind = "127.0.0.1:19132" # escucha de Bedrock
+motd = "Obsidian Proxy"
+version_name = "Obsidian"
+max_players = 100
+negotiation_timeout_secs = 30   # tiempo máximo para completar el handshake
+# max_connections_per_ip = 16     # máximo de conexiones TCP simultáneas por IP real (post-PROXY v2)
+# max_logins_per_ip_per_minute = 30 # máximo de logins por IP real en ventana móvil de 60s
+# play_idle_timeout_secs = 120    # timeout de inactividad en estado Play
+# forwarding_secret_env = "OBSIDIAN_FORWARDING_SECRET" # variable de entorno con secreto HMAC para forwarding = "obsidian"
+# trusted_proxies = ["10.222.0.1"] # IPs de relays de confianza que envían cabecera PROXY protocol v1/v2
+# limbo = "lobby"               # sala de espera por defecto para todos los backends
+
+[web]
+enabled = true
+# Loopback por defecto: el panel puede reescribir este archivo, así que llegar
+# a él debería exigir estar en la máquina. Cambialo solo si sabés lo que hacés.
+bind = "127.0.0.1:3000"
+
+[history]
+# Registro de lo que hizo el proxy: caídas y recuperaciones de backends,
+# despertares, recargas de configuración, jugadores rechazados.
+#
+# Es historial, nunca fuente de verdad: la topología la decide este archivo.
+# Perder una fila no cuesta nada, y por eso registrar no toca la ruta caliente:
+# los eventos van a una cola acotada y un hilo aparte los escribe. Si la cola se
+# llena se descartan y se cuentan; el login de un jugador nunca espera un disco.
+enabled = true
+path = "obsidian.db"
+
+# Cada backend es un servidor detrás del proxy. El primero es el destino por
+# defecto salvo que marques otro con `default = true`.
+[[backend]]
+name = "survival"
+addr = "127.0.0.1:25566"
+hostnames = ["play.example.com", "survival.example.com"]
+default = true
+
+# Cómo se le cuenta al backend quién es el jugador.
+#
+#   none        Solo el hostname. Es lo único que entienden vanilla, Forge y
+#               NeoForge. El backend ve la IP del proxy y le da al jugador un
+#               UUID offline. Es el valor por defecto.
+#   bungeecord  IP real, UUID y propiedades de perfil pegadas al hostname.
+#               Lo leen Spigot y Paper con `bungeecord: true` en spigot.yml.
+#   obsidian    Formato propio firmado con HMAC-SHA256 + timestamp (`OBSIDIANv1`).
+#
+# El default es `none` a propósito: el forwarding necesita las dos puntas
+# configuradas, y arrancar con él prendido sería arrancar a medias.
+#
+# En cualquiera de los casos el backend tiene que estar en online-mode=false
+# — el proxy ya autenticó contra Mojang y el cliente solo puede hacerlo una vez —
+# y por lo tanto solo debe ser alcanzable desde el proxy. `bungeecord` no lleva
+# ninguna prueba de haber salido de acá.
+forwarding = "bungeecord"
+# send_proxy_v2 = false         # si es true, antepone cabecera binaria PROXY protocol v2 al conectar al backend
+
+[[backend]]
+name = "creative"
+addr = "127.0.0.1:25567"
+hostnames = ["creative.example.com"]
+wake = "docker-creative"        # referencia a un bloque [wake.*] de más abajo
+
+# Un jugador llega y el backend está apagado. ¿Qué ve?
+#
+# Se prueban en orden y gana la primera posible; cada una se saltea sola si no
+# está configurada o si el cliente no la soporta. Si ninguna aplica, el jugador
+# recibe "servidor no disponible" — ese rechazo es el piso, no una estrategia.
+#
+#   limbo    Entra a una sala de espera real. Necesita `limbo` apuntando a un
+#            backend que esté arriba. Salir del limbo cuesta una reconexión:
+#            automática en 1.20.5+, expulsión con mensaje en versiones previas.
+#   hold     Se lo retiene en estado Configuration hasta que el backend responda
+#            y entra directo, sin reconectar. Necesita cliente 1.20.2+.
+#   message  "Arrancando, reintentá en ~X segundos".
+#
+# El default es ["limbo", "hold", "message"]. Recortá la lista para forzar un
+# comportamiento: ["hold"] solo retiene, ["message"] solo avisa, [] rechaza.
+waiting = ["limbo", "hold", "message"]
+limbo = "lobby"                 # sobreescribe el [proxy] limbo para este backend
+
+# La sala de espera. Un backend común y corriente.
+[[backend]]
+name = "lobby"
+addr = "127.0.0.1:25599"
+
+# Backends que arranca otra cosa: un cron, un orquestador, otra persona.
+# Un jugador que llega no dispara nada y recibe "no disponible" en vez de
+# "arrancando", que sería mentira. Se lo despierta desde el panel o la API.
+[[backend]]
+name = "eventos"
+addr = "127.0.0.1:25568"
+wake = "docker-creative"
+wake_on_connect = false
+
+# Comandos de arranque para backends que hibernan.
+#
+# Viven en bloques propios y se referencian por nombre a propósito: el panel de
+# administración puede asignarlos y quitarlos, pero no definirlos. Así la API
+# HTTP nunca decide qué comando de shell se ejecuta.
+[wake.docker-creative]
+command = "docker"
+args = ["start", "mc-creative"]
+ready_timeout_secs = 120

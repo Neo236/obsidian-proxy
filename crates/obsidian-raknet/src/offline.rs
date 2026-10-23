@@ -80,8 +80,12 @@ impl UnconnectedPing {
     }
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.remaining() < 33 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != UNCONNECTED_PING { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 33 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != UNCONNECTED_PING {
+            return Err(DecodeError::InvalidPacketId);
+        }
         let time = buf.get_u64();
         check_magic(buf)?;
         let client_guid = buf.get_u64();
@@ -108,17 +112,28 @@ impl UnconnectedPong {
     }
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.remaining() < 35 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != UNCONNECTED_PONG { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 35 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != UNCONNECTED_PONG {
+            return Err(DecodeError::InvalidPacketId);
+        }
         let time = buf.get_u64();
         let server_guid = buf.get_u64();
         check_magic(buf)?;
         let str_len = buf.get_u16() as usize;
-        if buf.remaining() < str_len { return Err(DecodeError::NotEnoughData); }
+        if buf.remaining() < str_len {
+            return Err(DecodeError::NotEnoughData);
+        }
         let mut str_bytes = vec![0; str_len];
         buf.copy_to_slice(&mut str_bytes);
-        let server_id_string = String::from_utf8(str_bytes).map_err(|_| DecodeError::InvalidString)?;
-        Ok(Self { time, server_guid, server_id_string })
+        let server_id_string =
+            String::from_utf8(str_bytes).map_err(|_| DecodeError::InvalidString)?;
+        Ok(Self {
+            time,
+            server_guid,
+            server_id_string,
+        })
     }
 }
 
@@ -141,12 +156,19 @@ impl OpenConnectionRequest1 {
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
         let mtu_size = buf.remaining() as u16;
-        if buf.remaining() < 18 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != OPEN_CONNECTION_REQUEST_1 { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 18 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != OPEN_CONNECTION_REQUEST_1 {
+            return Err(DecodeError::InvalidPacketId);
+        }
         check_magic(buf)?;
         let protocol_version = buf.get_u8();
         buf.advance(buf.remaining());
-        Ok(Self { protocol_version, mtu_size })
+        Ok(Self {
+            protocol_version,
+            mtu_size,
+        })
     }
 }
 
@@ -167,13 +189,21 @@ impl OpenConnectionReply1 {
     }
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.remaining() < 28 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != OPEN_CONNECTION_REPLY_1 { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 28 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != OPEN_CONNECTION_REPLY_1 {
+            return Err(DecodeError::InvalidPacketId);
+        }
         check_magic(buf)?;
         let server_guid = buf.get_u64();
         let use_security = buf.get_u8() != 0;
         let mtu_size = buf.get_u16();
-        Ok(Self { server_guid, use_security, mtu_size })
+        Ok(Self {
+            server_guid,
+            use_security,
+            mtu_size,
+        })
     }
 }
 
@@ -194,14 +224,22 @@ impl OpenConnectionRequest2 {
     }
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.remaining() < 34 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != OPEN_CONNECTION_REQUEST_2 { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 34 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != OPEN_CONNECTION_REQUEST_2 {
+            return Err(DecodeError::InvalidPacketId);
+        }
         check_magic(buf)?;
         // Wait, OpenConnectionRequest2 doesn't bitwise negate the address on decode because we didn't implement get_address bitwise inverse. But that's fine for now.
         let server_address = get_address(buf)?;
         let mtu_size = buf.get_u16();
         let client_guid = buf.get_u64();
-        Ok(Self { server_address, mtu_size, client_guid })
+        Ok(Self {
+            server_address,
+            mtu_size,
+            client_guid,
+        })
     }
 }
 
@@ -224,13 +262,22 @@ impl OpenConnectionReply2 {
     }
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.remaining() < 35 { return Err(DecodeError::NotEnoughData); }
-        if buf.get_u8() != OPEN_CONNECTION_REPLY_2 { return Err(DecodeError::InvalidPacketId); }
+        if buf.remaining() < 35 {
+            return Err(DecodeError::NotEnoughData);
+        }
+        if buf.get_u8() != OPEN_CONNECTION_REPLY_2 {
+            return Err(DecodeError::InvalidPacketId);
+        }
         check_magic(buf)?;
         let server_guid = buf.get_u64();
         let client_address = get_address(buf)?;
         let mtu_size = buf.get_u16();
         let encryption_enabled = buf.get_u8() != 0;
-        Ok(Self { server_guid, client_address, mtu_size, encryption_enabled })
+        Ok(Self {
+            server_guid,
+            client_address,
+            mtu_size,
+            encryption_enabled,
+        })
     }
 }

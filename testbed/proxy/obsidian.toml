@@ -1,0 +1,63 @@
+# Configuración del banco de pruebas.
+#
+# El objetivo de esta corrida es medir, no desplegar: el backend está apagado a
+# propósito para que el proxy tenga que decidir qué hacer con el jugador.
+
+[proxy]
+bind = "0.0.0.0:25570"
+motd = "Obsidian - banco de pruebas"
+version_name = "Obsidian"
+max_players = 5
+
+# Una traza por paquete relayado. Ruidoso, pero es cómo vamos a leer los IDs
+# reales del estado Configuration en vez de sacarlos de una tabla de memoria.
+trace_packets = true
+
+# Cuánto sostenemos a un jugador retenido antes de soltarlo nosotros.
+hold_budget_secs = 180
+
+[web]
+enabled = false
+
+[history]
+enabled = true
+path = "/work/obsidian-test.db"
+
+# --- 1.21.1 NeoForge, protocolo 767 ---
+[[backend]]
+name = "neoforge1211"
+addr = "neoforge1211:25565"
+hostnames = ["neoforge.test"]
+default = true
+forwarding = "none"
+wake = "manual"
+waiting = ["hold", "message"]
+
+# --- 1.21 vanilla, protocolo 767 ---
+[[backend]]
+name = "vanilla121"
+addr = "vanilla121:25565"
+hostnames = ["v121.test"]
+forwarding = "none"
+wake = "manual"
+waiting = ["hold", "message"]
+
+# --- 1.20.4 vanilla, protocolo 765: Configuration sí, Transfer no ---
+[[backend]]
+name = "vanilla1204"
+addr = "vanilla1204:25565"
+hostnames = ["v1204.test"]
+forwarding = "none"
+wake = "manual"
+waiting = ["hold", "message"]
+
+# El "arranque" es un no-op: los contenedores los levanto yo a mano cuando toca.
+# Alcanza para que el proxy marque el backend como Starting y entre en la rama
+# de espera, que es lo que queremos medir.
+#
+# Nota de diseño para más adelante: un wake real que hable con Docker necesita
+# el socket del demonio, y eso es root en el host. Hay patrones más acotados
+# (un socket-proxy limitado a "start"), pero no hace falta para medir.
+[wake.manual]
+command = "true"
+ready_timeout_secs = 180

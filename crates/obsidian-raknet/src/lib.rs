@@ -1,11 +1,11 @@
+pub mod client;
+pub mod connection;
 pub mod constants;
-pub mod offline;
-pub mod socket;
 pub mod datagram;
 pub mod fragment;
+pub mod offline;
 pub mod reliability;
-pub mod connection;
-pub mod client;
+pub mod socket;
 
 #[cfg(test)]
 mod tests {
@@ -24,13 +24,15 @@ mod tests {
         let decoded = UnconnectedPing::decode(&mut buf.into()).unwrap();
         assert_eq!(ping, decoded);
     }
-    
+
     #[test]
     fn test_unconnected_pong() {
         let pong = UnconnectedPong {
             time: 123456,
             server_guid: 7890,
-            server_id_string: "MCPE;Test Server;123;1.0.0;0;10;123456789;World;Survival;1;19132;19133;".to_string(),
+            server_id_string:
+                "MCPE;Test Server;123;1.0.0;0;10;123456789;World;Survival;1;19132;19133;"
+                    .to_string(),
         };
         let mut buf = BytesMut::new();
         pong.encode(&mut buf);
@@ -72,7 +74,7 @@ mod tests {
         };
         let mut buf = BytesMut::new();
         req.encode(&mut buf);
-        
+
         let decoded = OpenConnectionRequest2::decode(&mut buf.into()).unwrap();
         assert_eq!(req, decoded);
     }

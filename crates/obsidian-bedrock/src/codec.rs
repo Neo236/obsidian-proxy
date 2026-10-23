@@ -12,7 +12,7 @@ pub enum DecodeError {
 pub fn read_varint(buf: &mut Bytes) -> Result<u32, DecodeError> {
     let mut value = 0u32;
     let mut shift = 0;
-    
+
     loop {
         if !buf.has_remaining() {
             return Err(DecodeError::TooShort);
@@ -27,13 +27,13 @@ pub fn read_varint(buf: &mut Bytes) -> Result<u32, DecodeError> {
             return Err(DecodeError::InvalidVarInt);
         }
     }
-    
+
     Ok(value)
 }
 
 pub fn extract_packets(mut uncompressed_payload: Bytes) -> Result<Vec<Bytes>, DecodeError> {
     let mut packets = Vec::new();
-    
+
     while uncompressed_payload.has_remaining() {
         let len = read_varint(&mut uncompressed_payload)?;
         if uncompressed_payload.remaining() < len as usize {
@@ -42,7 +42,7 @@ pub fn extract_packets(mut uncompressed_payload: Bytes) -> Result<Vec<Bytes>, De
         let packet = uncompressed_payload.split_to(len as usize);
         packets.push(packet);
     }
-    
+
     Ok(packets)
 }
 
@@ -66,7 +66,7 @@ mod tests {
         buf.extend_from_slice(&[3, 1, 2, 3]);
         // Packet 2: length 2, data: [4, 5]
         buf.extend_from_slice(&[2, 4, 5]);
-        
+
         let packets = extract_packets(buf.freeze()).unwrap();
         assert_eq!(packets.len(), 2);
         assert_eq!(packets[0].as_ref(), &[1, 2, 3]);
@@ -78,7 +78,10 @@ mod tests {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[0x8E]); // Missing the last byte
         let mut bytes = buf.freeze();
-        assert!(matches!(read_varint(&mut bytes), Err(DecodeError::TooShort)));
+        assert!(matches!(
+            read_varint(&mut bytes),
+            Err(DecodeError::TooShort)
+        ));
     }
 
     #[test]
@@ -87,13 +90,19 @@ mod tests {
         // 6 bytes with MSB set will cause shift >= 35
         buf.extend_from_slice(&[0x80, 0x80, 0x80, 0x80, 0x80, 0x80]);
         let mut bytes = buf.freeze();
-        assert!(matches!(read_varint(&mut bytes), Err(DecodeError::InvalidVarInt)));
+        assert!(matches!(
+            read_varint(&mut bytes),
+            Err(DecodeError::InvalidVarInt)
+        ));
     }
 
     #[test]
     fn test_extract_packets_too_short() {
         let mut buf = BytesMut::new();
         buf.extend_from_slice(&[5, 1, 2, 3]); // Expected 5 bytes, only 3 provided
-        assert!(matches!(extract_packets(buf.freeze()), Err(DecodeError::TooShort)));
+        assert!(matches!(
+            extract_packets(buf.freeze()),
+            Err(DecodeError::TooShort)
+        ));
     }
 }

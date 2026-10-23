@@ -35,16 +35,15 @@ En `src/handshake.rs`, se efectúa un análisis (parsing) avanzado sobre `server
 
 **Soporte Transparente de Mods:** Al reconectar al jugador con el servidor destino, el enrutador L7 ensambla la nueva IP Forwarding y concatena limpiamente el `fml_marker` recuperado al final de la cadena de conexión. Esto evita la corrupción del *handshake* de BungeeCord y garantiza que los servidores reconozcan correctamente a los clientes utilizando *modpacks*.
 
-## 4. Secuencia de Login
-Si el siguiente estado solicitado es Login (`2`), la conexión transiciona a la fase de autenticación y cifrado (definida en `src/login.rs`):
+## 4. Secuencia de Login Multi-Versión
+Si el siguiente estado solicitado es Login (`2`) o Transfer (`3`), la conexión transiciona a la fase de autenticación y cifrado (definida en `src/login.rs`):
 
-1. **Serverbound Login Start (0x00):** El cliente envía su nombre de usuario (`name`) y de forma opcional su `player_uuid`.
-2. **Clientbound Encryption Request (0x01):** El servidor responde con su `server_id`, la clave pública RSA (`public_key`) en formato SPKI DER, y un `verify_token` generado aleatoriamente.
-3. **Serverbound Encryption Response (0x01):** El cliente cifra un secreto compartido (AES `shared_secret`) y el `verify_token` recibido utilizando la clave RSA pública y lo remite. En versiones >= 1.19, este paquete puede traer firmas (`salt`, `signature`).
-4. Tras validar el hash SHA-1 de verificación y activar AES-128-CFB8 en el flujo, si la compresión está habilitada, se despacha un **Set Compression (0x03)**.
-5. **Autenticación Velocity Modern Forwarding**: En este punto, si el servidor está configurado para Modern Forwarding, se transmite un **LoginPluginRequest (0x04)** hacia el backend y se procesa el **LoginPluginResponse (0x02)** que encapsula los datos del jugador validados mediante HMAC.
-6. **Clientbound Login Success (0x02):** Consolida la conexión con el UUID validado, nombre de usuario y un arreglo de perfiles de cuenta Mojang.
-7. **Login Acknowledged (0x03)** (Versiones >= 1.20.2): El cliente responde confirmando el éxito del inicio de sesión, lo que desencadena la transición a la **Configuration Phase**, aislada para la gestión de recursos (resource packs, datapacks) antes de entrar en la fase Play. (como texturas de skins codificadas en Base64).
+1. **Serverbound Login Start (0x00):** El cliente envía su nombre de usuario (`name`) y, según la versión del protocolo, banderas de firma o `player_uuid`. `LoginStart::encode_for_version` adapta el layout para `<= 1.18.2` (`< 759`), `1.19` (`759`), `1.19.1–1.19.2` (`760`), `1.19.3–1.20.1` (`761..=763`) y `1.20.2+` (`>= 764`).
+2. **Clientbound Encryption Request (0x01):** El proxy responde con su `server_id`, la clave pública RSA (`public_key`) en formato SPKI DER, y un `verify_token` generado aleatoriamente.
+3. **Serverbound Encryption Response (0x01):** El cliente cifra el secreto compartido (`shared_secret`) y el `verify_token` recibido utilizando la clave pública RSA. Las respuestas firmadas con clave de perfil (`salt`/`signature` de 1.19–1.19.2) se rechazan explícitamente por seguridad.
+4. Tras validar el token, activar `AES-128-CFB8` en el flujo y verificar la sesión contra Mojang (`hasJoined`), Obsidian conecta al backend (anteponiendo opcionalmente una cabecera binaria `PROXY protocol v2` si `send_proxy_v2 = true`) usando el modo de reenvío configurado (`none`, `bungeecord` u `obsidian` firmado con `HMAC-SHA256`) y habilita compresión mediante **Set Compression (0x03)**.
+5. **Clientbound Login Success (0x02):** `LoginSuccess::encode_for_version` consolida la conexión hacia el cliente adaptando el formato a su versión de protocolo (UUID en cadena con guiones en `< 735`, UUID binario sin propiedades en `735..=758`, con propiedades en `759..=765`, e incluyendo el byte booleano obligatorio `strict_error_handling = false` en `>= 766` / Minecraft 1.20.5+).
+6. **Login Acknowledged (0x03)** (Versiones `>= 1.20.2`): El cliente responde confirmando el inicio de sesión y entra en la **Configuration Phase** (donde también puede ser retenido con `Keep Alive 0x04` durante el arranque bajo demanda con la estrategia `Hold`) seguida de **Play**, cuyos paquetes son puenteados bidireccionalmente entre cliente y backend.
 
 ## 5. Server List Ping (SLP) y ChatDescription JSON
 Para el estado Status (`1`), gestionado en `src/status.rs`, el flujo es estricto:

@@ -1,25 +1,32 @@
 [package]
 name = "obsidian-protocol"
-version = "0.1.0"
-edition = "2024"
+description = "Minecraft Java Edition packet framing, cryptography and session authentication."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 bytes = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 serde = { workspace = true }
-serde_json = "1.0"
+serde_json = { workspace = true }
 
-# Phase 1 Crypto, Compression & Auth Dependencies
-rsa = { version = "0.9", features = ["sha1"] }
-rand = "0.8"
-sha1 = "0.10"
-reqwest = { version = "0.11", default-features = false, features = ["json", "rustls-tls"] }
+# crypto, compression & auth
+rsa = { workspace = true }
+rand = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+hmac = { workspace = true }
+subtle = { workspace = true }
+md-5 = { workspace = true }
 aes = { workspace = true }
 cfb8 = { workspace = true }
 libdeflater = { workspace = true }
-md-5 = "0.11.0"
-
-[dev-dependencies]
-tokio = { workspace = true, features = ["macros", "rt", "io-util"] }
+reqwest = { workspace = true }

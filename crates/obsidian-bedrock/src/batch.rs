@@ -3,6 +3,13 @@ use libdeflater::{CompressionLvl, Compressor, Decompressor};
 use snap::raw::{Decoder as SnapDecoder, Encoder as SnapEncoder};
 use thiserror::Error;
 
+/// Largest payload accepted from a compressed batch.
+///
+/// Both algorithms need this: Zlib because the output buffer is preallocated,
+/// and Snappy because the compressed stream declares its own output length, so
+/// a small packet can ask for gigabytes.
+pub const MAX_DECOMPRESSED_SIZE: usize = 10 * 1024 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CompressionMode {
     None,
@@ -16,6 +23,8 @@ pub enum BatchError {
     InvalidHeader(u8),
     #[error("Decompression error")]
     DecompressionFailed,
+    #[error("Decompressed size {size} exceeds the {max} byte limit")]
+    DecompressedTooLarge { size: usize, max: usize },
     #[error("Compression error")]
     CompressionFailed,
 }
@@ -33,17 +42,40 @@ pub fn decode_batch(mut buf: Bytes, mode: CompressionMode) -> Result<Bytes, Batc
         CompressionMode::None => Ok(buf),
         CompressionMode::Zlib => {
             let mut decompressor = Decompressor::new();
-            // Max arbitrary size limit to prevent memory exhaustion, e.g. 10MB
-            let mut out = vec![0; 1024 * 1024 * 10];
-            match decompressor.zlib_decompress(buf.as_ref(), &mut out) {
-                Ok(len) => {
-                    out.truncate(len);
-                    Ok(Bytes::from(out))
+            let mut cap = (buf.len().saturating_mul(8)).clamp(4096, MAX_DECOMPRESSED_SIZE);
+            loop {
+                let mut out = vec![0; cap];
+                match decompressor.zlib_decompress(buf.as_ref(), &mut out) {
+                    Ok(len) => {
+                        out.truncate(len);
+                        return Ok(Bytes::from(out));
+                    }
+                    Err(libdeflater::DecompressionError::InsufficientSpace) => {
+                        if cap >= MAX_DECOMPRESSED_SIZE {
+                            return Err(BatchError::DecompressedTooLarge {
+                                size: cap.saturating_add(1),
+                                max: MAX_DECOMPRESSED_SIZE,
+                            });
+                        }
+                        cap = (cap.saturating_mul(4)).min(MAX_DECOMPRESSED_SIZE);
+                    }
+                    Err(_) => return Err(BatchError::DecompressionFailed),
                 }
-                Err(_) => Err(BatchError::DecompressionFailed),
             }
         }
         CompressionMode::Snappy => {
+            // A Snappy stream carries its uncompressed length in the header, and
+            // decompress_vec trusts it. Check before allocating, or a few dozen
+            // bytes on the wire can ask for gigabytes of memory.
+            let declared = snap::raw::decompress_len(buf.as_ref())
+                .map_err(|_| BatchError::DecompressionFailed)?;
+            if declared > MAX_DECOMPRESSED_SIZE {
+                return Err(BatchError::DecompressedTooLarge {
+                    size: declared,
+                    max: MAX_DECOMPRESSED_SIZE,
+                });
+            }
+
             let mut decoder = SnapDecoder::new();
             match decoder.decompress_vec(buf.as_ref()) {
                 Ok(out) => Ok(Bytes::from(out)),
@@ -113,5 +145,51 @@ mod tests {
         let encoded = encode_batch(payload, CompressionMode::Snappy).unwrap();
         let decoded = decode_batch(encoded, CompressionMode::Snappy).unwrap();
         assert_eq!(decoded.as_ref(), payload);
+    }
+}
+
+#[cfg(test)]
+mod bounds_tests {
+    use super::*;
+
+    fn varint(mut value: u64) -> Vec<u8> {
+        let mut out = Vec::new();
+        loop {
+            let mut byte = (value & 0x7F) as u8;
+            value >>= 7;
+            if value != 0 {
+                byte |= 0x80;
+            }
+            out.push(byte);
+            if value == 0 {
+                return out;
+            }
+        }
+    }
+
+    /// Regression: a Snappy stream declares its own uncompressed length and
+    /// decompress_vec trusted it, so a handful of bytes on the wire could ask
+    /// for gigabytes. Zlib was already capped; Snappy was not.
+    #[test]
+    fn test_snappy_length_header_cannot_demand_unbounded_memory() {
+        let mut packet = vec![0xFE];
+        // Well past the 10 MB cap, but still a length Snappy considers valid.
+        packet.extend_from_slice(&varint(256 * 1024 * 1024));
+        packet.extend_from_slice(&[0u8; 8]);
+
+        match decode_batch(Bytes::from(packet), CompressionMode::Snappy) {
+            Err(BatchError::DecompressedTooLarge { size, max }) => {
+                assert!(size > max, "size {size} should exceed max {max}");
+            }
+            other => panic!("expected the size limit to reject this, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_a_payload_within_the_limit_still_round_trips() {
+        let payload = vec![0x42u8; 4096];
+        let encoded = encode_batch(&payload, CompressionMode::Snappy).unwrap();
+        let decoded = decode_batch(encoded, CompressionMode::Snappy).unwrap();
+        assert_eq!(decoded.as_ref(), payload.as_slice());
     }
 }

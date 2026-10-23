@@ -1,9 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use libdeflater::{CompressionLvl, Compressor, Decompressor};
 
-use crate::frame::{FrameError, PacketFrame, MAX_PACKET_SIZE};
+use crate::frame::{FrameError, MAX_PACKET_SIZE, PacketFrame};
 use crate::varint::{
-    decode_varint_slice, read_varint, varint_size, write_varint, VarIntBufExt, VarIntError,
+    VarIntBufExt, VarIntError, decode_varint_slice, read_varint, varint_size, write_varint,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -195,6 +195,13 @@ impl PacketDecompressor {
         }
 
         let packet_len = packet_len as usize;
+        if packet_len > max_packet_size {
+            return Err(CompressionError::Frame(FrameError::PacketTooLarge {
+                length: packet_len,
+                max: max_packet_size,
+            }));
+        }
+
         let total_required = len_bytes + packet_len;
         if src.len() < total_required {
             if src.capacity() < total_required {
@@ -229,11 +236,8 @@ impl PacketDecompressor {
                 });
             }
 
-            let uncompressed = decompress_zlib(
-                &mut self.decompressor,
-                &packet_data,
-                uncompressed_len,
-            )?;
+            let uncompressed =
+                decompress_zlib(&mut self.decompressor, &packet_data, uncompressed_len)?;
             let mut uncompressed_slice = &uncompressed[..];
             let packet_id = uncompressed_slice.get_var_int()?;
             let payload = Bytes::copy_from_slice(uncompressed_slice);
@@ -275,7 +279,10 @@ mod tests {
         let mut buf = BytesMut::new();
         compressor.encode_frame(&mut buf, &frame).unwrap();
 
-        let decoded = decompressor.decode_frame(&mut buf).unwrap().expect("Should decode");
+        let decoded = decompressor
+            .decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode");
         assert_eq!(decoded, frame);
         assert!(buf.is_empty());
     }
@@ -294,7 +301,10 @@ mod tests {
         // Encoded compressed size should be significantly smaller than original 1KB payload
         assert!(buf.len() < 100);
 
-        let decoded = decompressor.decode_frame(&mut buf).unwrap().expect("Should decode");
+        let decoded = decompressor
+            .decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode");
         assert_eq!(decoded, frame);
         assert!(buf.is_empty());
     }
@@ -310,8 +320,28 @@ mod tests {
         let mut buf = BytesMut::new();
         compressor.encode_frame(&mut buf, &frame).unwrap();
 
-        let decoded = decompressor.decode_frame(&mut buf).unwrap().expect("Should decode");
+        let decoded = decompressor
+            .decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode");
         assert_eq!(decoded, frame);
         assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn test_compressed_frame_rejects_oversized_wire_length_before_allocating() {
+        let mut decompressor = PacketDecompressor::new(256);
+        let mut buf = BytesMut::new();
+        // Write a 5-byte VarInt claiming i32::MAX (~2 GB) without sending the payload.
+        write_varint(&mut buf, i32::MAX);
+
+        let err = decompressor
+            .decode_frame_limited(&mut buf, MAX_PACKET_SIZE)
+            .expect_err("oversized wire packet length must be rejected before reserving");
+
+        assert!(matches!(
+            err,
+            CompressionError::Frame(FrameError::PacketTooLarge { .. })
+        ));
     }
 }

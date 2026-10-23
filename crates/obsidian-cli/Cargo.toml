@@ -1,16 +1,24 @@
 [package]
 name = "obsidian-cli"
-version = "0.1.0"
-edition = "2024"
+description = "Command line entry point that boots the Obsidian proxy and its admin panel."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "obsidian"
 path = "src/main.rs"
 
 [dependencies]
-obsidian-core = { path = "../obsidian-core" }
-obsidian-web = { path = "../obsidian-web" }
 tokio = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+obsidian-core = { workspace = true }
+obsidian-web = { workspace = true }

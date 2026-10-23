@@ -75,11 +75,7 @@ fn hex_encode_no_leading_zeros(bytes: &[u8]) -> String {
             s.push_str(&format!("{:02x}", b));
         }
     }
-    if s.is_empty() {
-        "0".to_string()
-    } else {
-        s
-    }
+    if s.is_empty() { "0".to_string() } else { s }
 }
 
 /// Generates a new 1024-bit RSA private key for proxy/server encryption negotiation.

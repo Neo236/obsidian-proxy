@@ -1,9 +1,9 @@
-use sha2::{Sha256, Digest};
 use aes::Aes256;
-use ctr::cipher::{StreamCipher, KeyIvInit};
-use p384::ecdh::EphemeralSecret;
+use ctr::cipher::{KeyIvInit, StreamCipher};
 use p384::PublicKey;
+use p384::ecdh::EphemeralSecret;
 use rand_core::OsRng;
+use sha2::{Digest, Sha256};
 
 use hmac::{Hmac, Mac};
 
@@ -28,9 +28,9 @@ impl BedrockCipher {
         key.copy_from_slice(&hash[..32]);
         let mut iv = [0u8; 16];
         iv.copy_from_slice(&hash[..16]);
-        
+
         let cipher = Aes256Ctr::new(key.as_ref().into(), &iv.into());
-        Self { 
+        Self {
             cipher,
             key,
             send_counter: 0,
@@ -87,7 +87,7 @@ pub fn generate_keypair() -> EphemeralSecret {
 pub fn derive_shared_secret(secret: &EphemeralSecret, public_key_bytes: &[u8]) -> Option<[u8; 48]> {
     let public_key = PublicKey::from_sec1_bytes(public_key_bytes).ok()?;
     let shared = secret.diffie_hellman(&public_key);
-    
+
     let mut result = [0u8; 48];
     result.copy_from_slice(shared.raw_secret_bytes().as_slice());
     Some(result)

@@ -77,6 +77,9 @@ impl GameProfile {
 
 /// Computes an offline-mode UUID. The formula is `MD5("OfflinePlayer:" + username)`.
 /// Set the UUID version to 3 and variant to 2 (RFC 4122).
+/// Timeout applied to every session-server request.
+pub const SESSION_SERVER_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 pub fn generate_offline_uuid(username: &str) -> u128 {
     let mut hasher = Md5::new();
     hasher.update(format!("OfflinePlayer:{}", username).as_bytes());
@@ -120,14 +123,49 @@ pub async fn authenticate_user_with_client(
     }
 }
 
+/// Reusable HTTP client for Mojang session-server calls.
+///
+/// Building a `reqwest::Client` sets up a connection pool and TLS
+/// configuration. [`authenticate_user`] builds one per call, which throws that
+/// pool away and forces a fresh TLS handshake for every player logging in. Hold
+/// one of these for the process lifetime instead.
+#[derive(Debug, Clone)]
+pub struct AuthClient {
+    inner: reqwest::Client,
+}
+
+impl AuthClient {
+    /// Builds a client with the session-server request timeout applied.
+    pub fn new() -> Result<Self, AuthError> {
+        Ok(Self {
+            inner: reqwest::Client::builder()
+                .timeout(SESSION_SERVER_TIMEOUT)
+                .build()?,
+        })
+    }
+
+    /// Authenticates a player's join request, reusing the pooled connection.
+    pub async fn authenticate(
+        &self,
+        username: &str,
+        server_hash: &str,
+        ip: Option<&str>,
+    ) -> Result<GameProfile, AuthError> {
+        authenticate_user_with_client(&self.inner, username, server_hash, ip).await
+    }
+}
+
 /// Authenticates a player's join request with Mojang session servers using a default HTTP client.
+///
+/// Prefer [`AuthClient`] on any hot path: this builds a fresh client, and with
+/// it a fresh connection pool, on every call.
 pub async fn authenticate_user(
     username: &str,
     server_hash: &str,
     ip: Option<&str>,
 ) -> Result<GameProfile, AuthError> {
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
+        .timeout(SESSION_SERVER_TIMEOUT)
         .build()?;
     authenticate_user_with_client(&client, username, server_hash, ip).await
 }

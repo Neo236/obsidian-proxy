@@ -11,10 +11,10 @@ pub struct Datagram {
 pub struct EncapsulatedFrame {
     pub reliability: u8, // 3 bits
     pub split_flag: bool,
-    pub length: u16, // in bits
+    pub length: u16,                       // in bits
     pub reliable_frame_index: Option<u32>, // 24-bit
-    pub sequence_index: Option<u32>, // 24-bit
-    pub order_index: Option<u32>, // 24-bit
+    pub sequence_index: Option<u32>,       // 24-bit
+    pub order_index: Option<u32>,          // 24-bit
     pub order_channel: Option<u8>,
     pub split_info: Option<SplitInfo>,
     pub payload: Bytes,
@@ -40,7 +40,10 @@ impl Datagram {
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, std::io::Error> {
         if buf.remaining() < 4 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading datagram header"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "EOF reading datagram header",
+            ));
         }
         let flags = buf.get_u8();
         let b0 = buf.get_u8() as u32;
@@ -115,17 +118,25 @@ impl EncapsulatedFrame {
 
     pub fn decode(buf: &mut Bytes) -> Result<Self, std::io::Error> {
         if buf.remaining() < 3 {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading frame header"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "EOF reading frame header",
+            ));
         }
         let flags = buf.get_u8();
         let reliability = (flags & 0xE0) >> 5;
         let split_flag = (flags & 0x10) != 0;
         let length = buf.get_u16();
-        let byte_length = (length as usize + 7) / 8; // length is in bits
+        let byte_length = (length as usize).div_ceil(8); // length is in bits
 
         let mut reliable_frame_index = None;
         if is_reliable(reliability) {
-            if buf.remaining() < 3 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading reliable frame index")); }
+            if buf.remaining() < 3 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "EOF reading reliable frame index",
+                ));
+            }
             let b0 = buf.get_u8() as u32;
             let b1 = buf.get_u8() as u32;
             let b2 = buf.get_u8() as u32;
@@ -134,7 +145,12 @@ impl EncapsulatedFrame {
 
         let mut sequence_index = None;
         if is_sequenced(reliability) {
-            if buf.remaining() < 3 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading sequence index")); }
+            if buf.remaining() < 3 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "EOF reading sequence index",
+                ));
+            }
             let b0 = buf.get_u8() as u32;
             let b1 = buf.get_u8() as u32;
             let b2 = buf.get_u8() as u32;
@@ -144,7 +160,12 @@ impl EncapsulatedFrame {
         let mut order_index = None;
         let mut order_channel = None;
         if is_ordered(reliability) || is_sequenced(reliability) {
-            if buf.remaining() < 4 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading order info")); }
+            if buf.remaining() < 4 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "EOF reading order info",
+                ));
+            }
             let b0 = buf.get_u8() as u32;
             let b1 = buf.get_u8() as u32;
             let b2 = buf.get_u8() as u32;
@@ -154,7 +175,12 @@ impl EncapsulatedFrame {
 
         let mut split_info = None;
         if split_flag {
-            if buf.remaining() < 10 { return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading split info")); }
+            if buf.remaining() < 10 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::UnexpectedEof,
+                    "EOF reading split info",
+                ));
+            }
             split_info = Some(SplitInfo {
                 split_count: buf.get_i32(),
                 split_id: buf.get_u16(),
@@ -163,7 +189,10 @@ impl EncapsulatedFrame {
         }
 
         if buf.remaining() < byte_length {
-            return Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "EOF reading payload"));
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "EOF reading payload",
+            ));
         }
         let payload = buf.split_to(byte_length);
 
@@ -208,7 +237,7 @@ mod tests {
 
         let mut buf = BytesMut::new();
         dg.encode(&mut buf);
-        
+
         let mut bytes = buf.freeze();
         let decoded = Datagram::decode(&mut bytes).unwrap();
         assert_eq!(dg, decoded);

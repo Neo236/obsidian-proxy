@@ -1,10 +1,18 @@
 [package]
 name = "obsidian-plugins"
-version = "0.1.0"
-edition = "2024"
+description = "Sandboxed Rhai scripting engine for connection-time proxy hooks."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-rhai = { version = "1.25.1", features = ["sync"] }
+rhai = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3.27.0"

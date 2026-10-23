@@ -31,3 +31,7 @@ Los datagramas y frames de RakNet están encapsulados con estricto control de me
     }
     ```
     Si se recolectan todos los fragmentos correctamente (`all_present`), se reensamblan utilizando `BytesMut::new()` concatenando iterativamente cada porción de memoria extraída de manera segura antes de llamar a `freeze()`.
+
+## 5. Blindaje contra DoS, Canal Confiable y TTL de Sesión
+*   **Límites en `AckPacket` y `ReliableOrderedChannel` (`reliability.rs`)**: La decodificación de paquetes ACK/NACK rechaza conteos mayores a `MAX_ACK_RECORDS = 4096` y rangos donde `(end - start) > MAX_ACK_SPAN`, evitando expansión cuadrática de memoria. Asimismo, la cola de paquetes fuera de orden (`out_of_order`) está acotada a `MAX_OUT_OF_ORDER_PACKETS = 2048`.
+*   **Ciclo de Vida y TTL de Sesiones (`socket.rs`)**: `RakNetListener` limita la tabla concurrente a `MAX_SESSIONS = 4096`, registra `last_seen: Instant` en cada datagrama recibido (`0x80..=0x8F`), elimina la sesión de inmediato al recibir `DISCONNECTION_NOTIFICATION (0x15)` y ejecuta una tarea recolectora que desaloja sesiones inactivas tras `SESSION_TTL = 30s`.

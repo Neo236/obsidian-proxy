@@ -1,0 +1,6 @@
+# Pinned so every machine and CI runner builds this workspace identically.
+# Edition 2024 requires 1.85 or newer; this is the version the workspace was
+# developed and verified against.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]

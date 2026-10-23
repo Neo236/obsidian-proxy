@@ -2,9 +2,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::io;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
-use crate::varint::{
-    decode_varint_slice, read_varint, varint_size, write_varint, VarIntError,
-};
+use crate::varint::{VarIntError, decode_varint_slice, read_varint, varint_size, write_varint};
 
 /// Maximum default allowed uncompressed packet size (2 MB).
 pub const MAX_PACKET_SIZE: usize = 2 * 1024 * 1024;
@@ -214,6 +212,42 @@ impl<S: AsyncRead + AsyncWrite + Unpin> PacketStream<S> {
         self.stream.flush().await?;
         Ok(())
     }
+
+    /// Reads and strips an optional HAProxy PROXY protocol v1/v2 header from
+    /// the start of the stream if present, leaving any trailing Minecraft packet
+    /// bytes in `read_buf`.
+    pub async fn maybe_read_proxy_header(
+        &mut self,
+    ) -> Result<Option<crate::proxy_protocol::ProxyHeader>, FrameError> {
+        use crate::proxy_protocol::{ProxyProtocolError, parse_proxy_header};
+
+        loop {
+            if !self.read_buf.is_empty() {
+                match parse_proxy_header(&self.read_buf) {
+                    Ok((hdr, consumed)) => {
+                        self.read_buf.advance(consumed);
+                        return Ok(Some(hdr));
+                    }
+                    Err(ProxyProtocolError::NotProxyHeader) => return Ok(None),
+                    Err(ProxyProtocolError::Incomplete) => {}
+                    Err(err) => {
+                        return Err(FrameError::Io(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            err.to_string(),
+                        )));
+                    }
+                }
+            }
+
+            let bytes_read = self.stream.read_buf(&mut self.read_buf).await?;
+            if bytes_read == 0 {
+                if self.read_buf.is_empty() {
+                    return Ok(None);
+                }
+                return Err(FrameError::UnexpectedEof);
+            }
+        }
+    }
 }
 
 impl PacketStream<tokio::net::TcpStream> {
@@ -225,7 +259,8 @@ impl PacketStream<tokio::net::TcpStream> {
     ) {
         let (read_half, write_half) = self.stream.into_split();
 
-        let mut reader = PacketReader::with_capacity(read_half, self.read_buf.capacity(), self.max_packet_size);
+        let mut reader =
+            PacketReader::with_capacity(read_half, self.read_buf.capacity(), self.max_packet_size);
         reader.read_buf = self.read_buf;
         reader.decompressor = self.decompressor;
 
@@ -379,7 +414,9 @@ mod tests {
         let mut buf = BytesMut::new();
         encode_frame(&mut buf, &frame).unwrap();
 
-        let decoded = decode_frame(&mut buf).unwrap().expect("Should decode full packet");
+        let decoded = decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode full packet");
         assert_eq!(decoded, frame);
         assert!(buf.is_empty());
     }
@@ -411,10 +448,14 @@ mod tests {
         encode_frame(&mut buf, &frame1).unwrap();
         encode_frame(&mut buf, &frame2).unwrap();
 
-        let decoded1 = decode_frame(&mut buf).unwrap().expect("Should decode packet 1");
+        let decoded1 = decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode packet 1");
         assert_eq!(decoded1, frame1);
 
-        let decoded2 = decode_frame(&mut buf).unwrap().expect("Should decode packet 2");
+        let decoded2 = decode_frame(&mut buf)
+            .unwrap()
+            .expect("Should decode packet 2");
         assert_eq!(decoded2, frame2);
 
         assert!(buf.is_empty());

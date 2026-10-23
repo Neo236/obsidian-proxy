@@ -1,0 +1,16 @@
+# Normalise to LF in the repository; Git checks out native line endings.
+# Without this, a Windows checkout rewrites every file and diffs become unreadable.
+* text=auto eol=lf
+
+*.rs      text eol=lf
+*.toml    text eol=lf
+*.md      text eol=lf
+*.yml     text eol=lf
+*.json    text eol=lf
+*.svelte  text eol=lf
+*.ts      text eol=lf
+
+Cargo.lock text eol=lf merge=binary linguist-generated=true
+
+*.png binary
+*.ico binary

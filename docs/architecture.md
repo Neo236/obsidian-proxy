@@ -1,38 +1,37 @@
 # Arquitectura de Obsidian
 
 ## Componentes del Sistema
-Obsidian es un proxy universal para Minecraft que se divide en varias cajas (crates) principales:
-- **obsidian-core**: Contiene el enrutador asíncrono, la lógica de conexión y administración del ciclo de vida de la sesión (ej. `HibernateManager`).
-- **obsidian-protocol**: Implementa los paquetes de Minecraft, criptografía (RSA, AES) y manejo de estados (Handshake, Status, Login).
-- **obsidian-cli**: Interfaz de línea de comandos que inicializa y levanta el proxy.
-- **obsidian-web**: Panel de administración web.
+Obsidian es un proxy propio para Minecraft escrito en Rust y dividido en 7 crates:
+- **obsidian-core**: Contiene el enrutador asíncrono (`ConnectionRouter`), la tabla de ruteo sin bloqueos (`SharedRouting`), el monitor de salud (`HealthMonitor`), el supervisor de arranque bajo demanda (`WakeSupervisor`), el almacén de configuración en caliente (`ConfigStore`) y el historial de eventos (`EventLog`).
+- **obsidian-protocol**: Implementa el framing de paquetes de Minecraft Java, VarInt/VarLong, compresión Zlib, criptografía (`RSA`, `AES-128-CFB8`), `PROXY protocol` v1/v2 y paquetes multi-versión de `Handshake`, `Status` y `Login`.
+- **obsidian-raknet**: Implementa el protocolo UDP RakNet con control de fragmentación, canales ordenados confiables y límites de memoria por sesión.
+- **obsidian-bedrock**: Implementa el framing de lotes (`Zlib` y `Snappy`) y las estructuras base de login para Bedrock Edition.
+- **obsidian-plugins**: Sandbox embebido en Rhai con límites estrictos de operaciones y memoria (`fail-closed`).
+- **obsidian-web**: API REST autenticada con token Bearer (comparación en tiempo constante) y servidor estático para el panel `obsidian-webui`.
+- **obsidian-cli**: Punto de entrada de línea de comandos que carga `obsidian.toml`, aplica overrides de CLI y arranca el proxy y el panel web.
 
-## Enrutamiento Asíncrono (L4/L7 con Tokio)
-El enrutador (`ConnectionRouter` en `router.rs`) se basa en `tokio` para manejar múltiples conexiones concurrentes sin bloqueo. Dependiendo de las necesidades de la conexión, utiliza dos estrategias:
-- **Enrutamiento L4 (Fast-Path)**: Si la conexión no necesita alteración en la capa de aplicación, el proxy utiliza `tokio::io::copy_bidirectional` para transferir bytes de manera directa y bidireccional entre el cliente y el servidor backend de forma muy eficiente.
-- **Enrutamiento L7 (Stateful)**: Si la conexión necesita manipular paquetes (como autenticación o BungeeCord/Velocity IP forwarding), el enrutador inspecciona y descifra los paquetes utilizando `PacketStream`. Aquí maneja las etapas de `LoginStart`, cifrado (EncryptionRequest/Response), compresión de paquetes y autenticación con Mojang. En Bedrock, se establece un túnel UDP de extremo a extremo mediante `RakNetClient`, gestionando la sesión para inspección y reenvío asíncrono.
+## Enrutamiento Asíncrono (L7 Stateful con Tokio)
+El enrutador (`ConnectionRouter` en `crates/obsidian-core/src/router.rs`) gestiona las conexiones entrantes bajo un presupuesto estricto de negociación (`negotiation_timeout_secs`), un timeout de inactividad en juego (`play_idle_timeout_secs`), un semáforo global (`MAX_CONCURRENT_CONNECTIONS`) y un guardián por IP (`IpGuard`):
+- **PROXY Protocol Entrante (`trusted_proxies`)**: Si la IP del socket pertenece a `trusted_proxies`, Obsidian lee y valida una cabecera HAProxy `PROXY` v1 o v2 al inicio del stream TCP (soportando IPv4, IPv6, IPv4-mapeado en IPv6, comando `LOCAL` para health checks y extensiones TLV) para recuperar la IP real del jugador antes del Handshake.
+- **Limitador por IP Real (`IpGuard`)**: Inmediatamente después de resolver la IP real del cliente (post-`PROXY v2`), `IpGuard` aplica un tope de conexiones simultáneas por IP (`max_connections_per_ip`, por defecto `16`) mediante un permiso RAII (`IpConnectionPermit`) y un tope de intentos de login por minuto (`max_logins_per_ip_per_minute`, por defecto `30`) en ventana móvil de 60 segundos antes de gastar CPU en RSA o llamadas a Mojang.
+- **Status (Server List Ping)**: Se responde localmente consultando el estado real (`Health::Up`, `Health::Down`, `Health::Starting`) del backend correspondiente al virtual host solicitado.
+- **Login Centralizado y Multi-Versión**: Obsidian termina el cifrado RSA + `AES-128-CFB8`, autentica al jugador contra Mojang Session Server, ejecuta los hooks de plugins Rhai en un hilo bloqueante con timeout, y negocia el login contra el backend seleccionado adaptando el formato de `LoginStart` y `LoginSuccess` a la versión de protocolo del cliente (`<= 1.18.2`, `1.19..=1.20.4`, `1.20.5..=1.21.1`, `1.21.2+`).
 
-## BungeeCord IP Forwarding
-En el enrutamiento L7, Obsidian implementa BungeeCord IP Forwarding para transmitir la IP real y el perfil (UUID y propiedades) del cliente al servidor de destino.
-Esto se hace en el paquete `Handshake` hacia el backend, donde se concatena la dirección de destino con `\0<Client_IP>\0<Client_UUID>\0<Properties_JSON>`. Luego de enviar este Handshake modificado y un paquete de `LoginStart` al backend, Obsidian consume la respuesta de autenticación del backend (como `SetCompression` y `LoginSuccess`) antes de entrar en un bucle continuo de reenvío bidireccional de paquetes (Play-state).
+## Modos de Reenvío al Backend (`Forwarding` y `send_proxy_v2`)
+Cada backend define su modo de reenvío en `obsidian.toml`:
+- **`none` (por defecto)**: Envía el hostname limpio (preservando marcadores de modloader como `\0FML\0`, `\0FML2\0`, `\0FML3\0`, `\0NEO`, `\0FORGE`). Ideal para servidores vanilla, Forge y NeoForge. Obsidian captura el UUID asignado por el backend en su `LoginSuccess` y se lo entrega al cliente junto con las propiedades de skin firmadas por Mojang, evitando discrepancias de UUID de entidad.
+- **`bungeecord`**: Inyecta `\0<Client_IP>\0<Client_UUID>\0<Properties_JSON>` en el `Handshake` hacia el backend (compatible con Paper/Spigot con `bungeecord: true`). Cualquier intento del cliente de inyectar campos separados por `\0` en el hostname original es rechazado antes de contactar al backend.
+- **`obsidian` (Propia firmada con HMAC-SHA256)**: Inyecta `\0OBSIDIANv1\0<Client_IP>\0<Client_UUID>\0<Properties_JSON>\0<Timestamp_Secs>\0<HMAC_Hex>` firmado con el secreto compartido en `OBSIDIAN_FORWARDING_SECRET` (`forwarding_secret_env`) y verificable en tiempo constante mediante `Handshake::verify_obsidian_forwarding`.
+- **`send_proxy_v2 = true` (Opcional por backend)**: Antepone una cabecera binaria HAProxy `PROXY protocol v2` (`encode_proxy_v2`) con el `SocketAddr` real del cliente al abrir la conexión TCP hacia el backend, permitiendo preservar la IP real a nivel de transporte (L4) incluso con `forwarding = "none"`.
 
-## Ciclo de Vida de la Sesión y Transiciones de Estado
-1. **Handshake**: El cliente envía información sobre el protocolo, dirección y el estado siguiente (`NextState`).
-2. **Status (Ping)**: Si el cliente solicita el estado (`NextState::Status`), Obsidian responde localmente (`handle_status`) con el MOTD, la versión y la información del servidor sin conectarse al backend, ahorrando recursos.
-3. **Login**: Si es un inicio de sesión (`NextState::Login`), el flujo es interceptado (L7) para autenticación con los servidores de sesión de Mojang, activación del cifrado y compresión antes de conectar al backend, o bien se usa la vía rápida L4.
-4. **Play**: Una vez que el inicio de sesión es exitoso, los paquetes fluyen en ambas direcciones hasta que alguna de las partes cierre la conexión.
+## Salud Dinámica e Hibernación (`HealthMonitor` y `WakeSupervisor`)
+- **`HealthMonitor`**: Sondea periódicamente cada backend por TCP y actualiza su `HealthCell` en `SharedRouting`. Su bucle supervisor reconcilia automáticamente las tareas de sondeo cuando se agregan, eliminan o cambian backends mediante `/api/reload` o `/api/backends`.
+- **`WakeSupervisor` y Estrategias de Espera**: Cuando un jugador intenta entrar a un backend en reposo con `wake` configurado y `wake_on_connect = true`, dispara el comando definido en `[wake.<nombre>]` de forma idempotente (un solo proceso por backend) y aplica la primera estrategia aplicable:
+  - **`hold` (`>= 1.20.2`)**: Pasa al cliente al estado `Configuration`, envía paquetes `Clientbound Keep Alive (0x04)` periódicos, almacena los paquetes de configuración iniciales del cliente y, en cuanto el backend pasa a `Health::Up`, conecta y empalma la sesión sin que el jugador tenga que reconectar.
+  - **`limbo`**: Enruta al jugador al backend de sala de espera configurado mientras monitorea la salud del backend destino, finalizando la sesión de limbo apenas el servidor destino está listo.
+  - **`message`**: Informa al jugador que el servidor está arrancando junto con el tiempo estimado (`ready_timeout_secs`).
+  - **Despertar Manual (`POST /api/backends/:name/wake`)**: Permite despertar desde el panel web o la API aquellos backends con `wake_on_connect = false`.
 
-## HibernateManager
-El módulo de hibernación de `obsidian-core` incluye el `HibernateManager`, que sirve para administrar el estado de los servidores en reposo. Usa atómicos (`AtomicBool`) para evitar levantar un servidor varias veces a la vez. Cuando un servidor finaliza su secuencia de arranque o ya está disponible de manera confirmada, se invoca `mark_online()`, lo cual restablece el estado `is_waking` a `false`, indicando que el proxy ya no tiene que iniciar el proceso de despertar al servidor backend porque ya está listo para recibir conexiones.
-
-## Inicialización de ServerConfig (CLI)
-En `crates/obsidian-cli/src/main.rs`, el proxy se inicializa a través de `clap`. Los argumentos como `--bind`, `--backend`, y `--motd` son recolectados por la estructura `Cli`. Esta información luego se mapea directamente a un `obsidian_core::ServerConfig`, permitiendo configurar las direcciones de escucha para Java (`bind_addr`), Bedrock (`raknet_bind_addr`), y la dirección del backend (`backend_addr`). Esta configuración se inyecta utilizando `ObsidianServer::with_config(config)` antes de ejecutar `server.run()`.
-
-## Telemetría Libre de Bloqueos (Lock-Free)
-El núcleo cuenta con una estructura global `ProxyStats` (`obsidian-core/src/stats.rs`) inyectada a través de `Arc`. Esta estructura alberga contadores `AtomicUsize` para registrar el ancho de banda (`total_bytes_rx`, `total_bytes_tx`) y las `active_connections`. Los hilos asíncronos del enrutador incrementan estos contadores utilizando `Ordering::Relaxed`, eliminando la necesidad de `Mutex` y permitiendo que la API REST consuma estos datos en tiempo real sin entorpecer el flujo de paquetes de Minecraft.
-
-## Sistema de Plugins Dinámicos (Rhai)
-La expansión de modularidad se introdujo a través del crate independiente `obsidian-plugins`. Este módulo integra un motor de scripting en lenguaje **Rhai**. Al inicializarse `ObsidianServer`, el `PluginManager` compila y cachea todos los scripts `.rhai` presentes en la carpeta de ejecución. Durante el enrutamiento L7 (inmediatamente después del paquete `LoginStart`), el enrutador invoca el "hook" `on_player_join(ip, username)`, permitiendo a los scripts abortar dinámicamente conexiones maliciosas sin recompilar el proxy.
-
-## Panel Web y Protección de Base de Datos
-El componente `obsidian-web` utiliza SQLite como motor de base de datos. Dado que SQLite es bloqueante, las consultas a la base de datos se delegan mediante `tokio::task::spawn_blocking`. Esta protección multihilo evita que las operaciones pesadas de E/S de la base de datos bloqueen los hilos de ejecución principales del enrutador. La Interfaz Gráfica (SPA) compila Svelte y consume tanto las rutas CRUD de administración como el nuevo endpoint `/api/stats` para telemetría en tiempo real.
+## Configuración Declarativa (`ConfigStore`) e Historial (`EventLog`)
+- **`ConfigStore`**: Edita `obsidian.toml` de forma atómica usando `toml_edit` para preservar comentarios y secciones (`[proxy]`, `[web]`, `[wake.*]`), protegiendo contra escrituras concurrentes mediante huella digital (`409 Conflict` / `StaleWrite`).
+- **`EventLog`**: Registra transiciones de salud, despertares, recargas y rechazos en SQLite (`WAL`) en un hilo dedicado conectado por un canal acotado, sin bloquear jamás la ruta de paquetes.
